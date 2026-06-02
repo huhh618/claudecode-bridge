@@ -45,6 +45,24 @@ export class CcbridgeApp {
     this.ptyManager.on('exit', (code: number) => {
       this.logger.info({ exitCode: code }, 'Claude exited');
       this.stateMachine.transition('IDLE');
+      process.stdin.pause();
+    });
+
+    // Forward terminal keystrokes to PTY
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.setRawMode(true);
+      } catch { /* ignore if not supported */ }
+    }
+    process.stdin.resume();
+    process.stdin.on('data', (data: Buffer) => {
+      const str = data.toString();
+      if (str === '\x03') {
+        // Ctrl+C -> forward SIGINT handling
+        process.emit('SIGINT', 'SIGINT');
+        return;
+      }
+      this.ptyManager.write(str);
     });
 
     this.ptyManager.start(config.claude.command, config.claude.args, config.claude.env);
@@ -60,6 +78,9 @@ export class CcbridgeApp {
   }
 
   private handlePtyData(raw: string): void {
+    // Mirror PTY output to current terminal so user can see Claude's interface
+    process.stdout.write(raw);
+
     const stripped = stripAnsi(raw);
     this.outputBuffer.push(stripped);
 
