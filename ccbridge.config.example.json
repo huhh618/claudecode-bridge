@@ -20,6 +20,12 @@
     "selectionPatterns": [
       "^\\s*[\\[\\(]\\d+[\\)\\]]\\s+"
     ],
+    "invitationPatterns": [
+      "你想从哪开始",
+      "What would you like to do",
+      "How can I help",
+      "Send message to Claude"
+    ],
     "ignorePatterns": [
       "^Reading\\.",
       "^Searching\\.",

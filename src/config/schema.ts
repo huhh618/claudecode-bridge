@@ -20,6 +20,12 @@ export const configSchema = z.object({
     selectionPatterns: z.array(z.string()).default([
       '^\\s*[\\[\\(]\\d+[\\)\\]]\\s+',
     ]),
+    invitationPatterns: z.array(z.string()).default([
+      '你想从哪开始',
+      'What would you like to do',
+      'How can I help',
+      'Send message to Claude',
+    ]),
     ignorePatterns: z.array(z.string()).default([
       '^Reading\\.',
       '^Searching\\.',

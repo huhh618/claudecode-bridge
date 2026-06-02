@@ -3,6 +3,7 @@ import type { PromptMessage } from '../types/index.js';
 interface DetectorConfig {
   confirmationPatterns: string[];
   selectionPatterns: string[];
+  invitationPatterns: string[];
   ignorePatterns: string[];
 }
 
@@ -14,11 +15,13 @@ interface AnalysisResult {
 export class InputDetector {
   private confirmationRes: RegExp[];
   private selectionRes: RegExp[];
+  private invitationRes: RegExp[];
   private ignoreRes: RegExp[];
 
   constructor(private config: DetectorConfig) {
     this.confirmationRes = config.confirmationPatterns.map((p) => new RegExp(p, 'i'));
     this.selectionRes = config.selectionPatterns.map((p) => new RegExp(p, 'i'));
+    this.invitationRes = config.invitationPatterns.map((p) => new RegExp(p, 'i'));
     this.ignoreRes = config.ignorePatterns.map((p) => new RegExp(p, 'i'));
   }
 
@@ -31,6 +34,10 @@ export class InputDetector {
 
     const confirmationMatch = filtered.some((line) =>
       this.confirmationRes.some((re) => re.test(line))
+    );
+
+    const invitationMatch = filtered.some((line) =>
+      this.invitationRes.some((re) => re.test(line))
     );
 
     const hasPromptEnd = filtered.some((line) => {
@@ -52,11 +59,11 @@ export class InputDetector {
       };
     }
 
-    if (confirmationMatch || (hasPromptEnd && filtered.length > 0)) {
+    if (confirmationMatch || invitationMatch || (hasPromptEnd && filtered.length > 0)) {
       return {
         awaitingInput: true,
         message: {
-          type: confirmationMatch ? 'confirmation' : 'question',
+          type: confirmationMatch ? 'confirmation' : (invitationMatch ? 'question' : 'question'),
           body: filtered.join('\n'),
           promptId: crypto.randomUUID(),
         },

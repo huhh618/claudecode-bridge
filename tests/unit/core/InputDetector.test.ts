@@ -5,6 +5,7 @@ describe('InputDetector', () => {
   const defaultConfig = {
     confirmationPatterns: ['\\[Y/n\\]', 'Confirm\\?'],
     selectionPatterns: ['^\\s*[\\[\\(]\\d+[\\)\\]]\\s+'],
+    invitationPatterns: ['你想从哪开始', 'What would you like to do', 'How can I help'],
     ignorePatterns: ['^Reading', '^Thinking'],
   };
 
@@ -50,6 +51,33 @@ describe('InputDetector', () => {
     const lines = ['Hello world', 'Some random text'];
     const result = detector.analyze(lines);
     expect(result.awaitingInput).toBe(false);
+  });
+
+  it('detects invitation/greeting prompts', () => {
+    const detector = new InputDetector(defaultConfig);
+    const lines = [
+      '作为 Claude Code，我可以帮你处理各种软件工程任务：',
+      '核心能力',
+      '  - 编码与修改：写新功能、修 bug、重构代码、添加测试',
+      '  - 代码理解：解释代码逻辑、分析依赖关系、审查 PR',
+      '如果你手头有具体的代码问题，直接告诉我就好。',
+      '你想从哪开始？',
+    ];
+    const result = detector.analyze(lines);
+    expect(result.awaitingInput).toBe(true);
+    expect(result.message?.type).toBe('question');
+    expect(result.message?.body).toContain('你想从哪开始？');
+  });
+
+  it('detects English invitation prompts', () => {
+    const detector = new InputDetector(defaultConfig);
+    const lines = [
+      'Tip: Send message to Claude while',
+      'What would you like to do?',
+    ];
+    const result = detector.analyze(lines);
+    expect(result.awaitingInput).toBe(true);
+    expect(result.message?.type).toBe('question');
   });
 
   it('extracts body excluding ignore patterns', () => {
