@@ -1,0 +1,30 @@
+{
+  "name": "ccbridge",
+  "version": "1.0.0",
+  "description": "Claude Code bidirectional multi-channel I/O bridge",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "cosmiconfig": "^9.0.0",
+    "fastify": "^4.28.0",
+    "node-pty": "^1.0.0",
+    "pino": "^9.0.0",
+    "strip-ansi": "^7.1.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
