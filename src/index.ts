@@ -7,6 +7,9 @@ import { ChannelRouter } from './channels/ChannelRouter.js';
 import { createLogger } from './utils/logger.js';
 import type { PtyOutputChunk } from './types/index.js';
 import stripAnsi from 'strip-ansi';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 export class CcbridgeApp {
   private logger = createLogger('ccbridge');
@@ -96,6 +99,14 @@ export class CcbridgeApp {
 // CLI entry point
 async function main() {
   const configPath = process.argv[2] || './ccbridge.config.json';
+
+  if (!existsSync(configPath)) {
+    console.error(`Config file not found: ${configPath}`);
+    console.error('Run: cp ccbridge.config.example.json ccbridge.config.json');
+    console.error('Then edit ccbridge.config.json with your settings.');
+    process.exit(1);
+  }
+
   const app = new CcbridgeApp(configPath);
 
   process.on('SIGINT', async () => {
@@ -106,7 +117,8 @@ async function main() {
   await app.start();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isMain = resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
+if (isMain) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);
