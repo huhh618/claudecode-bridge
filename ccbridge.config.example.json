@@ -1,1 +1,54 @@
-{}
+{
+  "claude": {
+    "command": "claude",
+    "args": [],
+    "env": {}
+  },
+  "stateMachine": {
+    "pauseThresholdMs": 800,
+    "inputTimeoutSec": 300,
+    "processingLockMs": 3000
+  },
+  "detector": {
+    "confirmationPatterns": [
+      "\\[Y/n\\]",
+      "\\(yes/no\\)",
+      "Confirm\\?",
+      "Is this okay\\?",
+      "Proceed\\?"
+    ],
+    "selectionPatterns": [
+      "^\\s*[\\[\\(]\\d+[\\)\\]]\\s+"
+    ],
+    "ignorePatterns": [
+      "^Reading\\.",
+      "^Searching\\.",
+      "^Thinking\\.",
+      "^Updating\\.",
+      "^Analyzing\\."
+    ]
+  },
+  "channels": {
+    "terminal": {
+      "enabled": true
+    },
+    "feishu": {
+      "enabled": false,
+      "mode": "self-built",
+      "appId": "cli_xxx",
+      "appSecret": "xxx",
+      "encryptKey": "xxx",
+      "webhookPort": 3000,
+      "webhookPath": "/feishu/webhook"
+    },
+    "telegram": {
+      "enabled": false
+    },
+    "wecom": {
+      "enabled": false
+    }
+  },
+  "handover": {
+    "enabled": true
+  }
+}
