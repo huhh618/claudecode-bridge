@@ -4,12 +4,13 @@ import { EventEmitter } from 'events';
 export class PtyManager extends EventEmitter {
   private pty: IPty | null = null;
 
-  start(command: string, args: string[], env: Record<string, string>): void {
+  start(command: string, args: string[], env: Record<string, string>, cwd?: string): void {
     this.pty = spawn(command, args, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,
       env: { ...process.env, ...env },
+      cwd,
     });
 
     this.pty.onData((data) => this.emit('data', data));

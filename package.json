@@ -1,5 +1,5 @@
 {
-  "name": "ccbridge",
+  "name": "cc-bridge",
   "version": "1.0.0",
   "description": "Claude Code bidirectional multi-channel I/O bridge",
   "main": "dist/index.js",
@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.66.1",
     "cosmiconfig": "^9.0.0",
     "fastify": "^4.28.0",
     "node-pty": "^1.0.0",

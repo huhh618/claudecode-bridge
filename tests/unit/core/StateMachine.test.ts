@@ -49,4 +49,40 @@ describe('StateMachine', () => {
     expect(h1).toHaveBeenCalledTimes(1);
     expect(h2).toHaveBeenCalledTimes(1);
   });
+
+  it('emits transition event with from and to arguments', () => {
+    const sm = new StateMachine();
+    const handler = vi.fn();
+    sm.on('transition', handler);
+    sm.transition('BUSY');
+    expect(handler).toHaveBeenCalledWith('IDLE', 'BUSY');
+    sm.transition('AWAITING_INPUT');
+    expect(handler).toHaveBeenCalledWith('BUSY', 'AWAITING_INPUT');
+  });
+
+  it('returns this from on for chaining', () => {
+    const sm = new StateMachine();
+    const result = sm.on('BUSY', vi.fn());
+    expect(result).toBe(sm);
+  });
+
+  it('re-emits event when transitioning to the same state', () => {
+    const sm = new StateMachine();
+    const handler = vi.fn();
+    sm.transition('BUSY');
+    sm.on('BUSY', handler);
+    sm.transition('BUSY');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits both specific and transition events on state change', () => {
+    const sm = new StateMachine();
+    const specificHandler = vi.fn();
+    const transitionHandler = vi.fn();
+    sm.on('AWAITING_INPUT', specificHandler);
+    sm.on('transition', transitionHandler);
+    sm.transition('AWAITING_INPUT');
+    expect(specificHandler).toHaveBeenCalledTimes(1);
+    expect(transitionHandler).toHaveBeenCalledWith('IDLE', 'AWAITING_INPUT');
+  });
 });

@@ -2,7 +2,9 @@
   "claude": {
     "command": "claude",
     "args": [],
-    "env": {}
+    "env": {},
+    "_cwd_comment": "Optional: fixed working dir. Use -w on CLI to override per-run.",
+    "cwd": ""
   },
   "stateMachine": {
     "pauseThresholdMs": 800,
@@ -15,7 +17,15 @@
       "\\(yes/no\\)",
       "Confirm\\?",
       "Is this okay\\?",
-      "Proceed\\?"
+      "Proceed\\?",
+      "Should I proceed",
+      "Do you want me to (continue|proceed|apply)",
+      "Apply these changes",
+      "Let me know if you'd like me to",
+      "是否继续",
+      "确认修改",
+      "确认执行",
+      "批准"
     ],
     "selectionPatterns": [
       "^\\s*[\\[\\(]\\d+[\\)\\]]\\s+"
@@ -24,14 +34,22 @@
       "你想从哪开始",
       "What would you like to do",
       "How can I help",
-      "Send message to Claude"
+      "Send message to Claude",
+      "I need to edit",
+      "I'll need to edit",
+      "我将修改",
+      "I will make the following changes",
+      "Here's what I plan to do"
     ],
     "ignorePatterns": [
       "^Reading\\.",
       "^Searching\\.",
       "^Thinking\\.",
       "^Updating\\.",
-      "^Analyzing\\."
+      "^Analyzing\\.",
+      "\\(thinking\\)",
+      "thought for \\d+s",
+      "Whatchamacallit"
     ]
   },
   "channels": {
@@ -47,6 +65,7 @@
       "webhookPort": 3000,
       "webhookPath": "/feishu/webhook"
     },
+    "_feishu_websocket_comment": "Use mode: 'websocket' for no public IP needed. Same fields as self-built except webhookPort/webhookPath are unused.",
     "telegram": {
       "enabled": false
     },

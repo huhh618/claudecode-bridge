@@ -11,7 +11,7 @@ export class TerminalAdapter implements IChannelAdapter {
   async send(message: PromptMessage): Promise<void> {
     // Terminal already sees full PTY output; only show cross-channel notifications
     if (message.title) {
-      console.log(`\n[ccbridge] ${message.title}\n`);
+      console.log(`\n[cc-bridge] ${message.title}\n`);
     }
   }
 

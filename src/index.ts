@@ -11,8 +11,8 @@ import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-export class CcbridgeApp {
-  private logger = createLogger('ccbridge');
+export class CcBridgeApp {
+  private logger = createLogger('cc-bridge');
   private configManager: ConfigManager;
   private stateMachine = new StateMachine();
   private ptyManager = new PtyManager();
@@ -20,10 +20,14 @@ export class CcbridgeApp {
   private adapterRegistry = new AdapterRegistry();
   private channelRouter: ChannelRouter;
   private outputBuffer: string[] = [];
+  private rawOutputBuffer: string[] = [];
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
+  private onStdinData: ((data: Buffer) => void) | null = null;
+  private cliOpts: CliOptions;
 
-  constructor(configPath: string) {
+  constructor(configPath: string, opts?: CliOptions) {
     this.configManager = new ConfigManager(configPath);
+    this.cliOpts = opts ?? { configPath, claudeArgs: [] };
   }
 
   async start(): Promise<void> {
@@ -45,17 +49,11 @@ export class CcbridgeApp {
     this.ptyManager.on('exit', (code: number) => {
       this.logger.info({ exitCode: code }, 'Claude exited');
       this.stateMachine.transition('IDLE');
-      process.stdin.pause();
+      this.restoreStdin();
     });
 
     // Forward terminal keystrokes to PTY
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.setRawMode(true);
-      } catch { /* ignore if not supported */ }
-    }
-    process.stdin.resume();
-    process.stdin.on('data', (data: Buffer) => {
+    this.onStdinData = (data: Buffer) => {
       const str = data.toString();
       if (str === '\x03') {
         // Ctrl+C -> forward SIGINT handling
@@ -63,9 +61,19 @@ export class CcbridgeApp {
         return;
       }
       this.ptyManager.write(str);
-    });
+    };
 
-    this.ptyManager.start(config.claude.command, config.claude.args, config.claude.env);
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.setRawMode(true);
+      } catch { /* ignore if not supported */ }
+    }
+    process.stdin.resume();
+    process.stdin.on('data', this.onStdinData);
+
+    const cwd = this.cliOpts.cwd || config.claude.cwd || undefined;
+    const args = [...config.claude.args, ...this.cliOpts.claudeArgs];
+    this.ptyManager.start(config.claude.command, args, config.claude.env, cwd);
     this.stateMachine.transition('BUSY');
     this.logger.info('Claude started');
   }
@@ -74,7 +82,21 @@ export class CcbridgeApp {
     if (this.pauseTimer) clearTimeout(this.pauseTimer);
     this.ptyManager.kill();
     await this.adapterRegistry.closeAll();
+    this.restoreStdin();
     this.logger.info('Stopped');
+  }
+
+  private restoreStdin(): void {
+    if (this.onStdinData) {
+      process.stdin.off('data', this.onStdinData);
+      this.onStdinData = null;
+    }
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.setRawMode(false);
+      } catch { /* ignore if not supported */ }
+    }
+    process.stdin.pause();
   }
 
   private handlePtyData(raw: string): void {
@@ -83,10 +105,14 @@ export class CcbridgeApp {
 
     const stripped = stripAnsi(raw);
     this.outputBuffer.push(stripped);
+    this.rawOutputBuffer.push(raw);
 
-    // Keep last 50 lines for analysis window
-    if (this.outputBuffer.length > 50) {
-      this.outputBuffer = this.outputBuffer.slice(-50);
+    // Keep last 200 lines for analysis window (diffs/reviews can be long)
+    if (this.outputBuffer.length > 200) {
+      this.outputBuffer = this.outputBuffer.slice(-200);
+    }
+    if (this.rawOutputBuffer.length > 200) {
+      this.rawOutputBuffer = this.rawOutputBuffer.slice(-200);
     }
 
     const state = this.stateMachine.getState();
@@ -106,7 +132,10 @@ export class CcbridgeApp {
   }
 
   private analyzeBuffer(): void {
-    const result = this.inputDetector.analyze(this.outputBuffer);
+    const raw = this.rawOutputBuffer.join('');
+    // outputBuffer holds PTY chunks (not lines); split into actual lines before analysis
+    const allLines = this.outputBuffer.join('').split(/\r?\n/);
+    const result = this.inputDetector.analyze(allLines, raw);
     if (result.awaitingInput && result.message) {
       this.logger.info({ promptId: result.message.promptId }, 'Awaiting input detected');
       this.stateMachine.transition('AWAITING_INPUT');
@@ -117,18 +146,93 @@ export class CcbridgeApp {
   }
 }
 
+export interface CliOptions {
+  configPath: string;
+  cwd?: string;
+  claudeArgs: string[];
+}
+
+export function parseCliArgs(argv: string[]): CliOptions {
+  const result: CliOptions = {
+    configPath: './cc-bridge.config.json',
+    claudeArgs: [],
+  };
+
+  let i = 0;
+  // First positional arg (if not starting with '-') is config path
+  if (argv[i] && !argv[i].startsWith('-')) {
+    result.configPath = argv[i];
+    i++;
+  }
+
+  while (i < argv.length) {
+    const arg = argv[i];
+
+    if (arg === '--dir') {
+      i++;
+      if (i >= argv.length) {
+        console.error(`Error: --dir requires a directory argument`);
+        process.exit(1);
+      }
+      result.cwd = argv[i];
+      i++;
+      continue;
+    }
+
+    if (arg === '-h' || arg === '--help') {
+      console.log(`Usage: cc-bridge [config-path] [options] [-- <claude-args>]
+
+cc-bridge options:
+  --dir <dir>       Working directory for Claude Code (overrides config)
+  -h, --help        Show this help
+
+All other flags are forwarded to Claude Code. Examples:
+  cc-bridge                              # default
+  cc-bridge --dir D:\\projects\\my-app    # run in specific directory
+  cc-bridge -w my-worktree               # pass -w to Claude (worktree)
+  cc-bridge --dir D:\\projects\\my-app -w my-worktree
+  cc-bridge -p "fix bug"                 # pass -p to Claude
+  cc-bridge --dir D:\\projects\\my-app -- -p "fix bug" --verbose`);
+      process.exit(0);
+    }
+
+    if (arg === '--') {
+      i++;
+      result.claudeArgs.push(...argv.slice(i));
+      break;
+    }
+
+    // Everything else is forwarded to Claude Code (including -w, -p, --verbose, etc.)
+    if (arg.startsWith('-')) {
+      const next = argv[i + 1];
+      if (next && !next.startsWith('-') && next !== '--') {
+        result.claudeArgs.push(arg, next);
+        i += 2;
+      } else {
+        result.claudeArgs.push(arg);
+        i++;
+      }
+      continue;
+    }
+
+    i++;
+  }
+
+  return result;
+}
+
 // CLI entry point
 async function main() {
-  const configPath = process.argv[2] || './ccbridge.config.json';
+  const opts = parseCliArgs(process.argv.slice(2));
 
-  if (!existsSync(configPath)) {
-    console.error(`Config file not found: ${configPath}`);
-    console.error('Run: cp ccbridge.config.example.json ccbridge.config.json');
-    console.error('Then edit ccbridge.config.json with your settings.');
+  if (!existsSync(opts.configPath)) {
+    console.error(`Config file not found: ${opts.configPath}`);
+    console.error('Run: cp cc-bridge.config.example.json cc-bridge.config.json');
+    console.error('Then edit cc-bridge.config.json with your settings.');
     process.exit(1);
   }
 
-  const app = new CcbridgeApp(configPath);
+  const app = new CcBridgeApp(opts.configPath, opts);
 
   process.on('SIGINT', async () => {
     await app.stop();
@@ -140,8 +244,12 @@ async function main() {
 
 const isMain = resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
 if (isMain) {
-  main().catch((err) => {
-    console.error(err);
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Fatal error:', message);
+    if (err instanceof Error && err.stack) {
+      console.error(err.stack);
+    }
     process.exit(1);
   });
 }

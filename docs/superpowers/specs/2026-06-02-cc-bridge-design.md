@@ -1,14 +1,14 @@
-# ccbridge — Claude Code 双向多通道 I/O 桥接服务
+# cc-bridge — Claude Code 双向多通道 I/O 桥接服务
 
 ## 1. 项目概述
 
-`ccbridge` 是一个 Node.js/TypeScript 代理服务，用于将 Claude Code CLI 的终端交互扩展为双向多通道 I/O。用户在终端执行 `claude` 操作时，当 Claude 给出选项需要用户确认、补充或选择，这些交互操作可以同时扩展到飞书（未来可扩展至微信、Telegram、企业微信）等消息平台。用户既可以在终端直接回复，也可以在飞书上回复，两者同步互斥。
+`cc-bridge` 是一个 Node.js/TypeScript 代理服务，用于将 Claude Code CLI 的终端交互扩展为双向多通道 I/O。用户在终端执行 `claude` 操作时，当 Claude 给出选项需要用户确认、补充或选择，这些交互操作可以同时扩展到飞书（未来可扩展至微信、Telegram、企业微信）等消息平台。用户既可以在终端直接回复，也可以在飞书上回复，两者同步互斥。
 
 ## 2. 架构总览
 
 ```
 ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   终端      │◄────►│  ccbridge   │◄────►│  Claude Code│
+│   终端      │◄────►│  cc-bridge   │◄────►│  Claude Code│
 │  (TTY/PTY)  │      │  (Node.js)  │      │  (子进程)   │
 └─────────────┘      └──────┬──────┘      └─────────────┘
                             │
@@ -20,7 +20,7 @@
          └────────┘   └────────┘   └──────────┘
 ```
 
-`ccbridge` 作为代理层：
+`cc-bridge` 作为代理层：
 - 向下通过 **PTY** 启动并管理 Claude Code 子进程
 - 向上提供 **多通道 I/O 适配器**（终端始终直通，消息平台按需接入）
 - 内部通过 **状态机** 识别 Claude 何时在等待用户决策，仅将决策内容推送至消息平台
@@ -35,13 +35,13 @@
 | **`InputDetector`** | 启发式规则引擎：检测 ANSI 菜单序列、选项列表、`[Y/n]` 模式、输出停顿超时 |
 | **`ChannelRouter`** | 多路复用器：管理所有注册通道，广播决策请求，接收首个有效输入 |
 | **`AdapterRegistry`** | 通道适配器注册表：加载对应平台的 SDK 适配器，统一接口 |
-| **`ConfigManager`** | 管理 `ccbridge.config.json`：平台配置、超时阈值、过滤规则 |
+| **`ConfigManager`** | 管理 `cc-bridge.config.json`：平台配置、超时阈值、过滤规则 |
 | **`HandoverManager`** | （高级功能）处理 `/handover` 命令，显式切换终端与消息平台之间的主控权 |
 
 ## 4. 状态机与数据流
 
 ```text
-用户启动 ccbridge
+用户启动 cc-bridge
     │
     ▼
 ┌─────────┐    PTY stdout 输出    ┌─────────┐
@@ -217,7 +217,7 @@ Claude 请求确认
 
 ## 8. 配置管理
 
-配置文件 `ccbridge.config.json`：
+配置文件 `cc-bridge.config.json`：
 
 ```json
 {
@@ -301,7 +301,7 @@ Claude 请求确认
 ## 11. 目录结构（v1）
 
 ```
-ccbridge/
+cc-bridge/
 ├── src/
 │   ├── index.ts              # 入口
 │   ├── core/
@@ -325,11 +325,11 @@ ccbridge/
 ├── docs/
 │   └── superpowers/
 │       └── specs/
-│           └── 2026-06-02-ccbridge-design.md
+│           └── 2026-06-02-cc-bridge-design.md
 ├── tests/
 │   ├── unit/
 │   └── integration/
-├── ccbridge.config.example.json
+├── cc-bridge.config.example.json
 ├── package.json
 ├── tsconfig.json
 └── README.md

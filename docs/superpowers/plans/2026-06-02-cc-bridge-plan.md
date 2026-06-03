@@ -1,8 +1,8 @@
-# ccbridge Implementation Plan
+# cc-bridge Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build ccbridge, a Node.js/TypeScript proxy service that wraps Claude Code CLI via PTY, detects user-input prompts with a state machine, and broadcasts them to Feishu (and other future channels) with first-come-first-served input routing.
+**Goal:** Build cc-bridge, a Node.js/TypeScript proxy service that wraps Claude Code CLI via PTY, detects user-input prompts with a state machine, and broadcasts them to Feishu (and other future channels) with first-come-first-served input routing.
 
 **Architecture:** PTY wrapper + heuristic state machine + pluggable channel adapters. Terminal is always connected; message-platform adapters are loaded from config. Only distilled decision points (confirmations, selections) are pushed to Feishu, not full terminal spam.
 
@@ -21,7 +21,7 @@ src/
     logger.ts                 # Pino logger factory
   config/
     schema.ts                 # Zod validation schema for config
-    ConfigManager.ts          # Loads and validates ccbridge.config.json
+    ConfigManager.ts          # Loads and validates cc-bridge.config.json
   core/
     StateMachine.ts           # IDLE / BUSY / AWAITING_INPUT / PROCESSING_INPUT
     InputDetector.ts          # Heuristic analysis of PTY output for prompts
@@ -42,13 +42,13 @@ src/
 - Create: `tsconfig.json`
 - Create: `vitest.config.ts`
 - Create: `.gitignore`
-- Create: `ccbridge.config.example.json` (stub)
+- Create: `cc-bridge.config.example.json` (stub)
 
 - [ ] **Step 1: Create `package.json`**
 
 ```json
 {
-  "name": "ccbridge",
+  "name": "cc-bridge",
   "version": "1.0.0",
   "description": "Claude Code bidirectional multi-channel I/O bridge",
   "main": "dist/index.js",
@@ -125,7 +125,7 @@ node_modules/
 dist/
 *.log
 .DS_Store
-ccbridge.config.json
+cc-bridge.config.json
 ```
 
 - [ ] **Step 5: Create directory structure and stub config**
@@ -133,7 +133,7 @@ ccbridge.config.json
 Run:
 ```bash
 mkdir -p src/{types,utils,config,core,channels} tests/{unit/{types,utils,config,core,channels},integration}
-echo '{}' > ccbridge.config.example.json
+echo '{}' > cc-bridge.config.example.json
 ```
 
 - [ ] **Step 6: Install dependencies**
@@ -394,7 +394,7 @@ git commit -m "feat(logger): add pino-based logger factory"
 - Create: `src/config/schema.ts`
 - Create: `src/config/ConfigManager.ts`
 - Create: `tests/unit/config/ConfigManager.test.ts`
-- Modify: `ccbridge.config.example.json`
+- Modify: `cc-bridge.config.example.json`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -406,7 +406,7 @@ import { ConfigManager } from '../../../src/config/ConfigManager.js';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
-const TEST_CONFIG_PATH = join(process.cwd(), 'ccbridge.test.config.json');
+const TEST_CONFIG_PATH = join(process.cwd(), 'cc-bridge.test.config.json');
 
 describe('ConfigManager', () => {
   beforeEach(() => {
@@ -548,7 +548,7 @@ export class ConfigManager {
 
 - [ ] **Step 5: Update example config**
 
-Write `ccbridge.config.example.json`:
+Write `cc-bridge.config.example.json`:
 
 ```json
 {
@@ -619,7 +619,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/config tests/unit/config ccbridge.config.example.json
+git add src/config tests/unit/config cc-bridge.config.example.json
 git commit -m "feat(config): add ConfigManager with Zod schema and example config"
 ```
 
@@ -1141,7 +1141,7 @@ export class TerminalAdapter implements IChannelAdapter {
   async send(message: PromptMessage): Promise<void> {
     // Terminal already sees full PTY output; only show cross-channel notifications
     if (message.title) {
-      console.log(`\n[ccbridge] ${message.title}\n`);
+      console.log(`\n[cc-bridge] ${message.title}\n`);
     }
   }
 
@@ -1677,23 +1677,23 @@ git commit -m "feat(channels): add ChannelRouter with FCFS broadcast and lock"
 
 **Files:**
 - Create: `src/index.ts`
-- Create: `tests/integration/ccbridge.test.ts`
-- Modify: `ccbridge.config.example.json`
+- Create: `tests/integration/cc-bridge.test.ts`
+- Modify: `cc-bridge.config.example.json`
 - Create: `README.md`
 
 - [ ] **Step 1: Write the failing integration test**
 
-Create `tests/integration/ccbridge.test.ts`:
+Create `tests/integration/cc-bridge.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { CcbridgeApp } from '../../src/index.js';
+import { CcBridgeApp } from '../../src/index.js';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
-const TEST_CFG = join(process.cwd(), 'ccbridge.integration.json');
+const TEST_CFG = join(process.cwd(), 'cc-bridge.integration.json');
 
-describe('CcbridgeApp integration', () => {
+describe('CcBridgeApp integration', () => {
   beforeEach(() => {
     writeFileSync(TEST_CFG, JSON.stringify({
       claude: { command: process.platform === 'win32' ? 'cmd.exe' : 'bash', args: [], env: {} },
@@ -1713,13 +1713,13 @@ describe('CcbridgeApp integration', () => {
   });
 
   it('constructs and loads config', async () => {
-    const app = new CcbridgeApp(TEST_CFG);
+    const app = new CcBridgeApp(TEST_CFG);
     expect(app).toBeDefined();
     await app.stop();
   });
 
   it('starts and stops without error', async () => {
-    const app = new CcbridgeApp(TEST_CFG);
+    const app = new CcBridgeApp(TEST_CFG);
     await app.start();
     await app.stop();
   });
@@ -1730,10 +1730,10 @@ describe('CcbridgeApp integration', () => {
 
 Run:
 ```bash
-npx vitest run tests/integration/ccbridge.test.ts
+npx vitest run tests/integration/cc-bridge.test.ts
 ```
 
-Expected: FAIL — `CcbridgeApp` not found.
+Expected: FAIL — `CcBridgeApp` not found.
 
 - [ ] **Step 3: Write entry point**
 
@@ -1750,8 +1750,8 @@ import { createLogger } from './utils/logger.js';
 import type { PtyOutputChunk } from './types/index.js';
 import stripAnsi from 'strip-ansi';
 
-export class CcbridgeApp {
-  private logger = createLogger('ccbridge');
+export class CcBridgeApp {
+  private logger = createLogger('cc-bridge');
   private configManager: ConfigManager;
   private stateMachine = new StateMachine();
   private ptyManager = new PtyManager();
@@ -1837,8 +1837,8 @@ export class CcbridgeApp {
 
 // CLI entry point
 async function main() {
-  const configPath = process.argv[2] || './ccbridge.config.json';
-  const app = new CcbridgeApp(configPath);
+  const configPath = process.argv[2] || './cc-bridge.config.json';
+  const app = new CcBridgeApp(configPath);
 
   process.on('SIGINT', async () => {
     await app.stop();
@@ -1860,7 +1860,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 Run:
 ```bash
-npx vitest run tests/integration/ccbridge.test.ts
+npx vitest run tests/integration/cc-bridge.test.ts
 ```
 
 Expected: PASS (2 tests). Integration tests spawn bash/cmd and exercise the full wiring.
@@ -1870,7 +1870,7 @@ Expected: PASS (2 tests). Integration tests spawn bash/cmd and exercise the full
 Create `README.md`:
 
 ```markdown
-# ccbridge
+# cc-bridge
 
 Claude Code bidirectional multi-channel I/O bridge.
 
@@ -1878,10 +1878,10 @@ Claude Code bidirectional multi-channel I/O bridge.
 
 1. Copy example config:
    ```bash
-   cp ccbridge.config.example.json ccbridge.config.json
+   cp cc-bridge.config.example.json cc-bridge.config.json
    ```
 
-2. Edit `ccbridge.config.json` with your Feishu credentials.
+2. Edit `cc-bridge.config.json` with your Feishu credentials.
 
 3. Run:
    ```bash
@@ -1897,7 +1897,7 @@ Claude Code bidirectional multi-channel I/O bridge.
 
 ## Configuration
 
-See `ccbridge.config.example.json` for all options.
+See `cc-bridge.config.example.json` for all options.
 
 ## Development
 
@@ -1910,8 +1910,8 @@ npm run test:watch   # watch mode
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/index.ts tests/integration/ccbridge.test.ts README.md ccbridge.config.example.json
-git commit -m "feat(app): add CcbridgeApp entry point with PTY, state machine, and channel routing"
+git add src/index.ts tests/integration/cc-bridge.test.ts README.md cc-bridge.config.example.json
+git commit -m "feat(app): add CcBridgeApp entry point with PTY, state machine, and channel routing"
 ```
 
 ---

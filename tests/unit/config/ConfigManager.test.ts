@@ -3,7 +3,7 @@ import { ConfigManager } from '../../../src/config/ConfigManager.js';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
-const TEST_CONFIG_PATH = join(process.cwd(), 'ccbridge.test.config.json');
+const TEST_CONFIG_PATH = join(process.cwd(), 'cc-bridge.test.config.json');
 
 describe('ConfigManager', () => {
   beforeEach(() => {

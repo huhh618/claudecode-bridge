@@ -3,6 +3,7 @@ import type { IChannelAdapter, PromptMessage } from '../types/index.js';
 export class ChannelRouter {
   private locked = false;
   private currentPromptId: string | null = null;
+  private winnerChannel: string | null = null;
   private onInput: ((text: string, channelName: string) => void) | null = null;
 
   constructor(private adapters: IChannelAdapter[]) {}
@@ -18,35 +19,13 @@ export class ChannelRouter {
 
   async broadcast(message: PromptMessage): Promise<void> {
     this.locked = false;
+    this.winnerChannel = null;
     this.currentPromptId = message.promptId;
-    await Promise.all(this.adapters.map((a) => a.send(message)));
+    await Promise.allSettled(this.adapters.map((a) => a.send(message)));
   }
 
   isLocked(): boolean {
     return this.locked;
-  }
-
-  reset(): void {
-    this.locked = false;
-    this.currentPromptId = null;
-  }
-
-  private winnerChannel: string | null = null;
-
-  listen(handler: (text: string, channelName: string) => void): void {
-    this.onInput = handler;
-    for (const adapter of this.adapters) {
-      adapter.onReply((text, promptId) => {
-        this.handleReply(adapter.name, text, promptId);
-      });
-    }
-  }
-
-  async broadcast(message: PromptMessage): Promise<void> {
-    this.locked = false;
-    this.winnerChannel = null;
-    this.currentPromptId = message.promptId;
-    await Promise.all(this.adapters.map((a) => a.send(message)));
   }
 
   reset(): void {
