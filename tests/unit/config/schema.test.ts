@@ -4,7 +4,7 @@ import { configSchema } from '../../../src/config/schema.js';
 describe('configSchema', () => {
   const minimalValid = {
     claude: { command: 'claude', args: [], env: {} },
-    stateMachine: { pauseThresholdMs: 800, inputTimeoutSec: 300, processingLockMs: 3000 },
+    stateMachine: { pauseThresholdMs: 800 },
     detector: {
       confirmationPatterns: ['\\[Y/n\\]'],
       selectionPatterns: ['^\\s*[\\[\\(]\\d+[\\)\\]]\\s+'],
@@ -36,8 +36,6 @@ describe('configSchema', () => {
       stateMachine: {},
     });
     expect(result.stateMachine.pauseThresholdMs).toBe(800);
-    expect(result.stateMachine.inputTimeoutSec).toBe(300);
-    expect(result.stateMachine.processingLockMs).toBe(3000);
   });
 
   it('provides defaults for detector patterns', () => {
@@ -134,16 +132,7 @@ describe('configSchema', () => {
     expect(() =>
       configSchema.parse({
         ...minimalValid,
-        stateMachine: { pauseThresholdMs: -1, inputTimeoutSec: 300, processingLockMs: 3000 },
-      })
-    ).toThrow();
-  });
-
-  it('rejects zero processingLockMs', () => {
-    expect(() =>
-      configSchema.parse({
-        ...minimalValid,
-        stateMachine: { pauseThresholdMs: 800, inputTimeoutSec: 300, processingLockMs: 0 },
+        stateMachine: { pauseThresholdMs: -1 },
       })
     ).toThrow();
   });

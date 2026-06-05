@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.66.1",
-    "cosmiconfig": "^9.0.0",
     "fastify": "^4.28.0",
     "node-pty": "^1.0.0",
     "pino": "^9.0.0",

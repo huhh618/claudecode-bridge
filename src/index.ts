@@ -5,7 +5,6 @@ import { PtyManager } from './core/PtyManager.js';
 import { AdapterRegistry } from './channels/AdapterRegistry.js';
 import { ChannelRouter } from './channels/ChannelRouter.js';
 import { createLogger } from './utils/logger.js';
-import type { PtyOutputChunk } from './types/index.js';
 import stripAnsi from 'strip-ansi';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
@@ -16,14 +15,19 @@ export class CcBridgeApp {
   private configManager: ConfigManager;
   private stateMachine = new StateMachine();
   private ptyManager = new PtyManager();
-  private inputDetector: InputDetector;
+  private inputDetector!: InputDetector;
   private adapterRegistry = new AdapterRegistry();
-  private channelRouter: ChannelRouter;
+  private channelRouter!: ChannelRouter;
   private outputBuffer: string[] = [];
   private rawOutputBuffer: string[] = [];
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
   private onStdinData: ((data: Buffer) => void) | null = null;
   private cliOpts: CliOptions;
+  private lastBroadcastBody: string | null = null;
+  private localInputTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly localInputSuppressMs = 1000;
+  private startupTime = 0;
+  private readonly startupGracePeriodMs = 3000;
 
   constructor(configPath: string, opts?: CliOptions) {
     this.configManager = new ConfigManager(configPath);
@@ -61,6 +65,13 @@ export class CcBridgeApp {
         return;
       }
       this.ptyManager.write(str);
+
+      // Suppress detector analysis while user is typing locally
+      // to avoid PTY echo being misidentified as a prompt.
+      if (this.localInputTimer) clearTimeout(this.localInputTimer);
+      this.localInputTimer = setTimeout(() => {
+        this.localInputTimer = null;
+      }, this.localInputSuppressMs);
     };
 
     if (process.stdin.isTTY) {
@@ -75,11 +86,13 @@ export class CcBridgeApp {
     const args = [...config.claude.args, ...this.cliOpts.claudeArgs];
     this.ptyManager.start(config.claude.command, args, config.claude.env, cwd);
     this.stateMachine.transition('BUSY');
+    this.startupTime = Date.now();
     this.logger.info('Claude started');
   }
 
   async stop(): Promise<void> {
     if (this.pauseTimer) clearTimeout(this.pauseTimer);
+    if (this.localInputTimer) clearTimeout(this.localInputTimer);
     this.ptyManager.kill();
     await this.adapterRegistry.closeAll();
     this.restoreStdin();
@@ -121,9 +134,10 @@ export class CcBridgeApp {
       // Wait for output to resume before leaving lock
       this.stateMachine.transition('BUSY');
       this.channelRouter.reset();
+      this.lastBroadcastBody = null;
     }
 
-    if (state === 'BUSY' || state === 'IDLE') {
+    if (state === 'BUSY' || state === 'IDLE' || state === 'AWAITING_INPUT') {
       if (this.pauseTimer) clearTimeout(this.pauseTimer);
       this.pauseTimer = setTimeout(() => {
         this.analyzeBuffer();
@@ -132,11 +146,25 @@ export class CcBridgeApp {
   }
 
   private analyzeBuffer(): void {
+    if (this.localInputTimer) {
+      // User recently typed locally; skip analysis to avoid PTY echo false positives.
+      return;
+    }
+    // Skip prompt detection during startup grace period to avoid splash-screen false positives
+    if (Date.now() - this.startupTime < this.startupGracePeriodMs) {
+      return;
+    }
     const raw = this.rawOutputBuffer.join('');
     // outputBuffer holds PTY chunks (not lines); split into actual lines before analysis
     const allLines = this.outputBuffer.join('').split(/\r?\n/);
     const result = this.inputDetector.analyze(allLines, raw);
     if (result.awaitingInput && result.message) {
+      const body = result.message.body;
+      // Avoid broadcasting identical content repeatedly while already awaiting input
+      if (this.stateMachine.getState() === 'AWAITING_INPUT' && this.lastBroadcastBody === body) {
+        return;
+      }
+      this.lastBroadcastBody = body;
       this.logger.info({ promptId: result.message.promptId }, 'Awaiting input detected');
       this.stateMachine.transition('AWAITING_INPUT');
       this.channelRouter.broadcast(result.message).catch((err) => {

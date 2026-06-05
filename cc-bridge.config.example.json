@@ -20,6 +20,7 @@
       "Proceed\\?",
       "Should I proceed",
       "Do you want me to (continue|proceed|apply)",
+      "Do you want to",
       "Apply these changes",
       "Let me know if you'd like me to",
       "是否继续",
@@ -28,13 +29,12 @@
       "批准"
     ],
     "selectionPatterns": [
-      "^\\s*[\\[\\(]\\d+[\\)\\]]\\s+"
+      "^\\s*[\\[\\(]\\d+[\\)\\]]\\s+",
+      "^\\s*(>)?\\d+\\.\\s+",
+      "^\\s*\\[\\s*[^\\]]+\\s*\\]"
     ],
     "invitationPatterns": [
       "你想从哪开始",
-      "What would you like to do",
-      "How can I help",
-      "Send message to Claude",
       "I need to edit",
       "I'll need to edit",
       "我将修改",
@@ -49,7 +49,18 @@
       "^Analyzing\\.",
       "\\(thinking\\)",
       "thought for \\d+s",
-      "Whatchamacallit"
+      "Infusing[…\\.]+",
+      "Smooshing[…\\.]+",
+      "Whatchamacallit",
+      "Welcome back!",
+      "Tips for getting started",
+      "Recent activity",
+      "No recent activity",
+      "API Usage Billing",
+      "Run /init to create a CLAUDE\\.md",
+      "accept edits on",
+      "shift\\+tab to cycle",
+      "Claude Code v\\d+\\.\\d+"
     ]
   },
   "channels": {
@@ -63,9 +74,12 @@
       "appSecret": "xxx",
       "encryptKey": "xxx",
       "webhookPort": 3000,
-      "webhookPath": "/feishu/webhook"
+      "webhookPath": "/feishu/webhook",
+      "instanceId": "",
+      "receiveId": "ou_xxx",
+      "receiveIdType": "open_id"
     },
-    "_feishu_websocket_comment": "Use mode: 'websocket' for no public IP needed. Same fields as self-built except webhookPort/webhookPath are unused.",
+    "_feishu_websocket_comment": "Use mode: 'websocket' for no public IP needed. Same fields as self-built except webhookPort/webhookPath are unused. Set instanceId when running multiple cc-bridge instances against the same Feishu app. Set receiveId/receiveIdType to predefine where messages are sent (no need to message the bot first).",
     "telegram": {
       "enabled": false
     },

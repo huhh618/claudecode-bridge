@@ -9,7 +9,7 @@ describe('CcBridgeApp', () => {
   beforeEach(() => {
     writeFileSync(TEST_CFG, JSON.stringify({
       claude: { command: process.platform === 'win32' ? 'cmd.exe' : 'bash', args: [], env: {} },
-      stateMachine: { pauseThresholdMs: 800, inputTimeoutSec: 300, processingLockMs: 3000 },
+      stateMachine: { pauseThresholdMs: 800 },
       detector: {
         confirmationPatterns: ['\\[Y/n\\]'],
         selectionPatterns: ['^\\s*[\\[\\(]\\d+[\\)\\]]\\s+'],
@@ -105,6 +105,7 @@ describe('CcBridgeApp', () => {
     const broadcastSpy = vi.spyOn(router, 'broadcast').mockResolvedValue(undefined);
 
     (app as any).outputBuffer = ['Proceed? [Y/n]'];
+    (app as any).startupTime = 0; // bypass startup grace period
     sm.transition('BUSY');
     (app as any).analyzeBuffer();
 

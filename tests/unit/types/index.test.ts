@@ -3,8 +3,6 @@ import {
   type State,
   type PromptMessage,
   type IChannelAdapter,
-  type CcbridgeConfig,
-  type PtyOutputChunk,
 } from '../../../src/types/index.js';
 
 describe('types', () => {
@@ -24,25 +22,5 @@ describe('types', () => {
     };
     expect(msg.promptId).toBe('abc-123');
     expect(msg.body).toBe('Confirm?');
-  });
-
-  it('PtyOutputChunk should carry raw and stripped text', () => {
-    const chunk: PtyOutputChunk = {
-      raw: '\x1b[32mhello\x1b[0m',
-      stripped: 'hello',
-      timestamp: Date.now(),
-    };
-    expect(chunk.stripped).toBe('hello');
-  });
-
-  it('CcbridgeConfig should have required channels.terminal', () => {
-    const cfg: CcbridgeConfig = {
-      claude: { command: 'claude', args: [], env: {} },
-      stateMachine: { pauseThresholdMs: 800, inputTimeoutSec: 300, processingLockMs: 3000 },
-      detector: { confirmationPatterns: [], selectionPatterns: [], ignorePatterns: [] },
-      channels: { terminal: { enabled: true } },
-      handover: { enabled: false },
-    };
-    expect(cfg.channels.terminal.enabled).toBe(true);
   });
 });

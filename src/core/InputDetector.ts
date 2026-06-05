@@ -1,4 +1,5 @@
 import type { PromptMessage } from '../types/index.js';
+import { AnsiStateMachine } from './AnsiStateMachine.js';
 
 interface DetectorConfig {
   confirmationPatterns: string[];
@@ -25,83 +26,100 @@ export class InputDetector {
     this.ignoreRes = config.ignorePatterns.map((p) => new RegExp(p, 'i'));
   }
 
-  analyze(lines: string[], raw?: string): AnalysisResult {
-    const filtered = lines
+  analyze(_lines: string[], raw?: string): AnalysisResult {
+    let plainLines: string[];
+    let ansiInteractive = false;
+    let hasInputPrompt = false;
+
+    if (raw) {
+      const asm = new AnsiStateMachine();
+      asm.process(raw);
+      plainLines = asm.getLastPlainLines(50);
+      ansiInteractive = asm.hasInteractiveFeatures();
+      const lastLine = plainLines[plainLines.length - 1]?.trim();
+      hasInputPrompt = asm.isCursorAtBottom() && lastLine !== undefined && /^\s*>\s*$/.test(lastLine);
+    } else {
+      plainLines = _lines.slice(-50);
+    }
+
+    const filtered = plainLines
       .filter((line) => !this.isIgnored(line))
       .filter((line) => !this.isJunk(line));
 
-    const selectionMatches = filtered.filter((line) =>
+    // Also filter _lines for selection detection because AnsiStateMachine
+    // may miss lines that were rendered via complex terminal updates.
+    const filteredLines = _lines.slice(-50)
+      .filter((line) => !this.isIgnored(line))
+      .filter((line) => !this.isJunk(line));
+
+    // 1. Selection list detection — use union of both sources
+    const selectionMatches = [...new Set([...filtered, ...filteredLines])].filter((line) =>
       this.selectionRes.some((re) => re.test(line))
     );
+    const hasOptions = selectionMatches.length >= 2;
 
+    // 2. Confirmation detection
     const confirmationMatch = filtered.some((line) =>
       this.confirmationRes.some((re) => re.test(line))
     );
 
+    // 3. Invitation detection
     const invitationMatch = filtered.some((line) =>
       this.invitationRes.some((re) => re.test(line))
     );
 
+    // 4. Prompt-ending punctuation
     const hasPromptEnd = filtered.some((line) => {
       const trimmed = line.trim();
       return trimmed.endsWith('?') || trimmed.endsWith(':') || /^\s*>\s*$/.test(trimmed);
     });
 
-    const ansiInteractive = raw ? this.detectAnsiInteractive(raw) : false;
-
-    const hasOptions = selectionMatches.length >= 2;
-
     const buildBody = (source: string[]) => {
       const recent = source.slice(-40);
-      return recent
+      // Strip terminal UI border residues and dedent common leading whitespace
+      const cleaned = recent.map((line) =>
+        line.replace(/^[│║╎╏├┤┌┐└┘\s]+/, '').replace(/[│║╎╏├┤┌┐└┘\s]+$/, '')
+      );
+      const nonEmpty = cleaned.filter((l) => l.trim().length > 0);
+      const minIndent = nonEmpty.length > 0
+        ? Math.min(...nonEmpty.map((l) => l.length - l.trimStart().length))
+        : 0;
+      const dedented = cleaned.map((l) => (l.trim().length > 0 ? l.slice(minIndent) : l));
+      return dedented
         .join('\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     };
+
+    const body = buildBody(filtered);
+    if (!body) {
+      return { awaitingInput: false };
+    }
 
     if (hasOptions) {
       return {
         awaitingInput: true,
         message: {
           type: 'selection',
-          body: buildBody(filtered),
+          body,
           options: selectionMatches,
           promptId: crypto.randomUUID(),
         },
       };
     }
 
-    if (confirmationMatch || invitationMatch || ansiInteractive || (hasPromptEnd && filtered.length > 0)) {
+    if (confirmationMatch || invitationMatch || ansiInteractive || hasInputPrompt || (hasPromptEnd && filtered.length > 0)) {
       return {
         awaitingInput: true,
         message: {
           type: confirmationMatch ? 'confirmation' : 'question',
-          body: buildBody(filtered),
+          body,
           promptId: crypto.randomUUID(),
         },
       };
     }
 
     return { awaitingInput: false };
-  }
-
-  /**
-   * Detect interactive UI patterns (review/approval screens) via ANSI sequences.
-   * These are common in Claude Code's review interface where cursor positioning
-   * and reverse video (highlighting) are used to render selectable options.
-   */
-  private detectAnsiInteractive(raw: string): boolean {
-    // Cursor positioning: ESC[row;colH or ESC[H
-    const cursorPos = /\x1b\[[0-9;]*[Hf]/.test(raw);
-    // Reverse video (highlight): ESC[7m
-    const reverseVideo = /\x1b\[7m/.test(raw);
-    // Bold: ESC[1m
-    const bold = /\x1b\[1m/.test(raw);
-    // Cursor hide: ESC[?25l (interactive UIs often hide cursor)
-    const cursorHide = /\x1b\[\?25l/.test(raw);
-
-    // Interactive menu signature: cursor positioning + (reverse video or bold or cursor hide)
-    return cursorPos && (reverseVideo || bold || cursorHide);
   }
 
   private isIgnored(line: string): boolean {
@@ -121,6 +139,67 @@ export class InputDetector {
     if (/^[\u2500-\u257F\s]+$/.test(trimmed)) {
       return true;
     }
+
+    // Terminal UI border lines with content (e.g. │ Welcome back! │)
+    if (/^[│║╎╏├┤┌┐└┘].*[│║╎╏├┤┌┐└┘]$/.test(trimmed)) {
+      return true;
+    }
+
+    // Claude Code splash screen elements
+    if (/Welcome back!/.test(trimmed)) return true;
+    if (/Tips for getting started/.test(trimmed)) return true;
+    if (/Recent activity/.test(trimmed)) return true;
+    if (/No recent activity/.test(trimmed)) return true;
+    if (/API Usage Billing/.test(trimmed)) return true;
+    if (/Run \/init to create a CLAUDE\.md/.test(trimmed)) return true;
+
+    // Claude Code version header
+    if (/Claude Code v\d+\.\d+/.test(trimmed)) return true;
+
+    // Claude Code thinking animations
+    if (/Infusing[…\.]+/.test(trimmed)) return true;
+    if (/Smooshing[…\.]+/.test(trimmed)) return true;
+    if (/\(thinking\)/.test(trimmed)) return true;
+    if (/thought for \d+s/.test(trimmed)) return true;
+    if (/inking\)/.test(trimmed)) return true; // residue of (thinking)
+
+    // Standalone spinner chars that leaked into longer lines
+    if (/^[✢✶✻✽●·⏵\s]+/.test(trimmed) && /Infusing|thinking|Smooshing/.test(trimmed)) {
+      return true;
+    }
+
+    // Claude Code status indicators — filter ALL lines starting with ● or ⏵
+    // (these are spinner/status indicators, never conversation content)
+    if (/^[●⏵]\s+\S/.test(trimmed)) return true;
+
+    // Claude Code file-read hints
+    if (/^Read \d+ file.*\(ctrl\+o/.test(trimmed)) return true;
+
+    // Claude Code tip box (⎿ Tip: ...)
+    if (/^[⎿]\s+Tip:/.test(trimmed)) return true;
+
+    // Command-approval system hints
+    if (/^>.*requires approval/.test(trimmed)) return true;
+
+    // Help hints shown below prompts
+    if (/^Esc to cancel/.test(trimmed)) return true;
+    if (/esc to interrupt/.test(trimmed)) return true;
+    if (/Tab to amend/.test(trimmed)) return true;
+    if (/ctrl\+e to explain/.test(trimmed)) return true;
+
+    // Separator lines mixed with labels (e.g. "──────────── Bash command")
+    if (/^[_\-─═]+.*\s+(command|file|Bash)/i.test(trimmed)) return true;
+
+    // Command-approval option prefixes with action hints
+    if (/shift\+tab to cycle\).*(esc|ctrl)/.test(trimmed)) return true;
+
+    // User input echo (Claude Code prompt: "> user text")
+    // Keep bare ">" for prompt detection, but filter echoed user input
+    if (/^>\s+\S/.test(trimmed)) return true;
+
+    // Edit-mode hints
+    if (/accept edits on/.test(trimmed)) return true;
+    if (/shift\+tab to cycle/.test(trimmed)) return true;
 
     return false;
   }

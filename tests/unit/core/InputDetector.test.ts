@@ -3,8 +3,8 @@ import { InputDetector } from '../../../src/core/InputDetector.js';
 
 describe('InputDetector', () => {
   const defaultConfig = {
-    confirmationPatterns: ['\\[Y/n\\]', 'Confirm\\?'],
-    selectionPatterns: ['^\\s*[\\[\\(]\\d+[\\)\\]]\\s+'],
+    confirmationPatterns: ['\\[Y/n\\]', 'Confirm\\?', 'Proceed\\?'],
+    selectionPatterns: ['^\\s*[\\[\\(]\\d+[\\)\\]]\\s+', '^\\s*(>)?\\d+\\.\\s+'],
     invitationPatterns: ['你想从哪开始', 'What would you like to do', 'How can I help'],
     ignorePatterns: ['^Reading', '^Thinking'],
   };
@@ -92,6 +92,33 @@ describe('InputDetector', () => {
     expect(result.awaitingInput).toBe(true);
     expect(result.message?.body).toContain('Confirm delete?');
     expect(result.message?.body).not.toContain('Reading files...');
+  });
+
+  it('detects selection through terminal UI junk', () => {
+    const detector = new InputDetector(defaultConfig);
+    const lines = [
+      'Read 1 file (ctrl+o to expand)',
+      '● ReaRunn 1 file… (c rl+o to expand)',
+      '● Bash(npmgrunsbuild 2>&1)',
+      '──────────────────────────────────────────────────── Bash command',
+      '⎿ Tip: Use /permissions to pre-approve and pre-deny bash, edit, and MCP tools',
+      'npm run build 2>&1',
+      'Build TypeScript project',
+      '>This command requires approval',
+      'Do you want to proceed?',
+      'shift+tab to cycle) · esc to interrupt',
+      '2. Yes, and don\'t ask again for: npm run:*',
+      '3. No',
+      'Esc to cancel · Tab to amend · ctrl+e to explain',
+    ];
+    const result = detector.analyze(lines);
+    expect(result.awaitingInput).toBe(true);
+    expect(result.message?.type).toBe('selection');
+    expect(result.message?.options).toContain('2. Yes, and don\'t ask again for: npm run:*');
+    expect(result.message?.options).toContain('3. No');
+    expect(result.message?.body).toContain('Do you want to proceed?');
+    expect(result.message?.body).not.toContain('● Bash');
+    expect(result.message?.body).not.toContain('⎿ Tip:');
   });
 
   it('does not detect selection with only one option', () => {

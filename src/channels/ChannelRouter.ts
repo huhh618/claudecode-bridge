@@ -11,8 +11,8 @@ export class ChannelRouter {
   listen(handler: (text: string, channelName: string) => void): void {
     this.onInput = handler;
     for (const adapter of this.adapters) {
-      adapter.onReply((text, promptId) => {
-        this.handleReply(adapter.name, text, promptId);
+      adapter.onReply((text) => {
+        this.handleReply(adapter.name, text);
       });
     }
   }
@@ -21,7 +21,13 @@ export class ChannelRouter {
     this.locked = false;
     this.winnerChannel = null;
     this.currentPromptId = message.promptId;
-    await Promise.allSettled(this.adapters.map((a) => a.send(message)));
+    const results = await Promise.allSettled(this.adapters.map((a) => a.send(message)));
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'rejected') {
+        console.error(`[ChannelRouter] Send failed (${this.adapters[i].name}):`, r.reason);
+      }
+    }
   }
 
   isLocked(): boolean {
@@ -34,7 +40,7 @@ export class ChannelRouter {
     this.currentPromptId = null;
   }
 
-  private handleReply(channelName: string, text: string, _promptId?: string): void {
+  private handleReply(channelName: string, text: string): void {
     if (this.locked) {
       // Notify the late channel that input was already handled
       const adapter = this.adapters.find((a) => a.name === channelName);

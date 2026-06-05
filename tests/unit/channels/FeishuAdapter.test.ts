@@ -36,7 +36,7 @@ describe('FeishuAdapter', () => {
   });
 
   describe('webhook mode', () => {
-    it('sends message via webhookUrl', async () => {
+    it('sends question as interactive card via webhookUrl', async () => {
       await adapter.initialize({
         mode: 'webhook',
         webhookUrl: 'https://hook.example.com/send',
@@ -52,9 +52,12 @@ describe('FeishuAdapter', () => {
         'https://hook.example.com/send',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ msg_type: 'text', content: { text: 'Hello' } }),
+          body: expect.stringContaining('"msg_type":"interactive"'),
         })
       );
+      const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.card.header.title.content).toBe('Claude 向你提问');
+      expect(body.card.elements[0].content).toBe('Hello');
     });
 
     it('sends selection as interactive card via webhook', async () => {
@@ -137,7 +140,7 @@ describe('FeishuAdapter', () => {
       ).resolves.toBeUndefined();
     });
 
-    it('sends text message after receiving p2p webhook', async () => {
+    it('sends question card after receiving p2p webhook', async () => {
       await adapter.initialize(config);
 
       // Simulate p2p message webhook
@@ -158,8 +161,11 @@ describe('FeishuAdapter', () => {
       const sendBody = JSON.parse((sendCall![1] as RequestInit).body as string);
       expect(sendBody).toMatchObject({
         receive_id: 'ou_user',
-        msg_type: 'text',
+        msg_type: 'interactive',
       });
+      const card = JSON.parse(sendBody.content);
+      expect(card.header.title.content).toBe('Claude 向你提问');
+      expect(card.elements[0].content).toBe('Reply');
     });
 
     it('sends selection as interactive card', async () => {
@@ -188,7 +194,7 @@ describe('FeishuAdapter', () => {
       expect(sendBody.msg_type).toBe('interactive');
       const card = JSON.parse(sendBody.content);
       expect(card.header.title.content).toBe('Choose');
-      expect(card.elements[0].text.content).toBe('Pick one');
+      expect(card.elements[0].content).toBe('Pick one');
       expect(card.elements[1].actions).toHaveLength(2);
       expect(card.elements[1].actions[0].value.text).toBe('[1] A');
     });
@@ -221,7 +227,7 @@ describe('FeishuAdapter', () => {
       expect(card.elements[1].actions[1].value.text).toBe('n');
     });
 
-    it('sends message to group after receiving group webhook', async () => {
+    it('sends question card to group after receiving group webhook', async () => {
       await adapter.initialize(config);
 
       (adapter as any).handleWebhookMessage({
@@ -241,8 +247,11 @@ describe('FeishuAdapter', () => {
       const sendBody = JSON.parse((sendCall![1] as RequestInit).body as string);
       expect(sendBody).toMatchObject({
         receive_id: 'oc_group',
-        msg_type: 'text',
+        msg_type: 'interactive',
       });
+      const card = JSON.parse(sendBody.content);
+      expect(card.header.title.content).toBe('Claude 向你提问');
+      expect(card.elements[0].content).toBe('Reply');
     });
 
     it('reuses cached token until expiry', async () => {
@@ -277,6 +286,117 @@ describe('FeishuAdapter', () => {
       });
 
       expect(handler).toHaveBeenCalledWith('1', undefined);
+    });
+
+    it('handles card action without instanceId when context exists', async () => {
+      await adapter.initialize(config);
+      const handler = vi.fn();
+      adapter.onReply(handler);
+
+      // Establish context by simulating an incoming message first
+      (adapter as any).handleWebhookMessage({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat', content: '{"text":"hello"}' },
+        },
+      });
+
+      // Then click a card button that lacks instanceId
+      (adapter as any).handleWebhookMessage({
+        event: {
+          type: 'card.action.trigger',
+          action: { value: { text: 'Y' } },
+        },
+      });
+
+      expect(handler).toHaveBeenCalledWith('Y', undefined);
+    });
+
+    it('handles card action with stringified value', async () => {
+      await adapter.initialize(config);
+      const handler = vi.fn();
+      adapter.onReply(handler);
+
+      (adapter as any).handleWebhookMessage({
+        event: {
+          type: 'card.action.trigger',
+          action: { value: JSON.stringify({ text: 'string-value', instanceId: (adapter as any).instanceId }) },
+        },
+      });
+
+      expect(handler).toHaveBeenCalledWith('string-value', undefined);
+    });
+
+    it('builds toast response for card action webhook', () => {
+      const result = (adapter as any).buildWebhookResponse({
+        event: { type: 'card.action.trigger', action: { value: { text: 'Y' } } },
+      });
+      expect(result.toast).toBeDefined();
+      expect(result.toast.type).toBe('success');
+    });
+
+    it('builds plain code response for normal message webhook', () => {
+      const result = (adapter as any).buildWebhookResponse({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat', content: '{"text":"hello"}' },
+        },
+      });
+      expect(result.code).toBe(0);
+      expect(result.toast).toBeUndefined();
+    });
+
+    it('accepts direct message without parent_id when context exists', async () => {
+      await adapter.initialize(config);
+      const handler = vi.fn();
+      adapter.onReply(handler);
+
+      // First message establishes context and sends a reply (tracked message)
+      (adapter as any).handleWebhookMessage({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat', content: '{"text":"hello"}' },
+        },
+      });
+      expect(handler).toHaveBeenCalledWith('hello', undefined);
+      handler.mockClear();
+
+      // Simulate bot sending a message (tracks message_id)
+      (adapter as any).trackMessageId('msg_123');
+
+      // Second direct message from same user without parent_id should still be accepted
+      (adapter as any).handleWebhookMessage({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat', content: '{"text":"second"}' },
+        },
+      });
+      expect(handler).toHaveBeenCalledWith('second', undefined);
+    });
+
+    it('ignores direct message from different context', async () => {
+      await adapter.initialize(config);
+      const handler = vi.fn();
+      adapter.onReply(handler);
+
+      // Establish context with user A
+      (adapter as any).handleWebhookMessage({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user_a' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat_a', content: '{"text":"hello"}' },
+        },
+      });
+      expect(handler).toHaveBeenCalledWith('hello', undefined);
+      handler.mockClear();
+
+      // Direct message from user B should be ignored
+      (adapter as any).handleWebhookMessage({
+        event: {
+          sender: { sender_id: { open_id: 'ou_user_b' } },
+          message: { chat_type: 'p2p', chat_id: 'oc_chat_b', content: '{"text":"intruder"}' },
+        },
+      });
+      expect(handler).not.toHaveBeenCalled();
     });
   });
 
@@ -468,6 +588,51 @@ describe('FeishuAdapter', () => {
     expect(result).toBe('Body only');
   });
 
+  it('wraps multi-line body in code block', () => {
+    const result = (adapter as any).formatCardBody('line1\nline2\nline3');
+    expect(result).toBe('\`\`\`\nline1\nline2\nline3\n\`\`\`');
+  });
+
+  it('builds plain text with title', () => {
+    const result = (adapter as any).buildPlainText({
+      type: 'question',
+      title: 'Claude 向你提问',
+      body: 'line1\nline2',
+      promptId: 'p1',
+    });
+    expect(result).toBe('Claude 向你提问\n\nline1\nline2');
+  });
+
+  it('builds plain text for single-line body', () => {
+    const result = (adapter as any).buildPlainText({
+      type: 'question',
+      body: 'Hello',
+      promptId: 'p1',
+    });
+    expect(result).toBe('Hello');
+  });
+
+  it('builds plain text without title when title is absent', () => {
+    const result = (adapter as any).buildPlainText({
+      type: 'raw',
+      body: 'Just raw text',
+      promptId: 'p1',
+    });
+    expect(result).toBe('Just raw text');
+  });
+
+  it('strips ANSI from body and options', () => {
+    const card = (adapter as any).buildCardContent({
+      type: 'selection',
+      body: '\x1b[32mhello\x1b[0m',
+      options: ['\x1b[32m[1] Yes\x1b[0m'],
+      promptId: 'p1',
+    });
+    expect(card.elements[0].content).toBe('hello');
+    expect(card.elements[1].actions[0].text.content).toBe('[1] Yes');
+    expect(card.elements[1].actions[0].value.text).toBe('[1] Yes');
+  });
+
   describe('websocket mode', () => {
     it('throws when appId/appSecret missing', async () => {
       await expect(
@@ -502,7 +667,7 @@ describe('FeishuAdapter', () => {
       expect(handler).toHaveBeenCalledWith('ws hello', undefined);
     });
 
-    it('sends message after receiving websocket message', async () => {
+    it('sends question card after receiving websocket message', async () => {
       const { WSClient } = await import('@larksuiteoapi/node-sdk');
       vi.spyOn(WSClient.prototype, 'start').mockResolvedValue(undefined);
       vi.spyOn(WSClient.prototype, 'close').mockImplementation(() => {});
@@ -545,8 +710,11 @@ describe('FeishuAdapter', () => {
       const sendBody = JSON.parse((sendCall![1] as RequestInit).body as string);
       expect(sendBody).toMatchObject({
         receive_id: 'ou_ws_user',
-        msg_type: 'text',
+        msg_type: 'interactive',
       });
+      const card = JSON.parse(sendBody.content);
+      expect(card.header.title.content).toBe('Claude 向你提问');
+      expect(card.elements[0].content).toBe('WS Reply');
     });
 
     it('sends selection card via websocket mode', async () => {
@@ -644,6 +812,31 @@ describe('FeishuAdapter', () => {
       });
 
       expect(handler).toHaveBeenCalledWith('ws-card-no-type', undefined);
+    });
+
+    it('handles card action trigger from websocket with event wrapper', async () => {
+      const { WSClient } = await import('@larksuiteoapi/node-sdk');
+      vi.spyOn(WSClient.prototype, 'start').mockResolvedValue(undefined);
+      vi.spyOn(WSClient.prototype, 'close').mockImplementation(() => {});
+
+      await adapter.initialize({
+        mode: 'websocket',
+        appId: 'test-app',
+        appSecret: 'test-secret',
+        encryptKey: 'test-key',
+      });
+
+      const handler = vi.fn();
+      adapter.onReply(handler);
+
+      (adapter as any).handleWsMessage({
+        event: {
+          type: 'card.action.trigger',
+          action: { value: { text: 'ws-card-with-event' } },
+        },
+      });
+
+      expect(handler).toHaveBeenCalledWith('ws-card-with-event', undefined);
     });
   });
 });

@@ -19,10 +19,6 @@ export class TerminalAdapter implements IChannelAdapter {
     this.handler = handler;
   }
 
-  triggerReply(text: string, promptId?: string): void {
-    this.handler?.(text, promptId);
-  }
-
   async close(): Promise<void> {
     this.handler = null;
   }
