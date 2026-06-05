@@ -68,10 +68,24 @@ export class InputDetector {
       this.invitationRes.some((re) => re.test(line))
     );
 
-    // 4. Prompt-ending punctuation
-    const hasPromptEnd = filtered.some((line) => {
+    // 4. Prompt-ending punctuation — only check the last few lines.
+    // Prompts appear at the end of output; mid-text questions/colons are false positives.
+    const lastFewLines = filtered.slice(-3);
+    const hasPromptEnd = lastFewLines.some((line) => {
       const trimmed = line.trim();
-      return trimmed.endsWith('?') || trimmed.endsWith(':') || /^\s*>\s*$/.test(trimmed);
+      // Standalone prompt cursor (Claude Code input line)
+      if (/^\s*>\s*$/.test(trimmed)) return true;
+      // Question mark: require substantive text before it, and reject log prefixes like "Error?"
+      if (trimmed.endsWith('?')) {
+        const before = trimmed.slice(0, -1).trim();
+        return before.length >= 3 && !/^(Error|Warning|INFO|DEBUG|Trace|Exception)$/i.test(before);
+      }
+      // Colon: require substantive text and reject common log prefixes like "Error:", "at foo:"
+      if (trimmed.endsWith(':')) {
+        const before = trimmed.slice(0, -1).trim();
+        return before.length >= 3 && !/^(Error|Warning|INFO|DEBUG|TRACE|FATAL|at\s+\S+|\S+\s+failed)$/i.test(before);
+      }
+      return false;
     });
 
     const buildBody = (source: string[]) => {

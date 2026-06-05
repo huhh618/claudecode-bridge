@@ -30,7 +30,9 @@ export const configSchema = z.object({
     selectionPatterns: z.array(z.string()).default([
       '^\\s*[\\[\\(]\\d+[\\)\\]]\\s+',
       '^\\s*(>\\s*)?\\d+\\.\\s+',
-      '^\\s*\\[\\s*[^\\]]+\\s*\\]',
+      // Require bracketed text to be followed by actual content
+      // (avoids matching bare tags like [FeishuAdapter] as options)
+      '^\\s*\\[\\s*[^\\]]+\\s*\\]\\s+\\S',
     ]),
     invitationPatterns: z.array(z.string()).default([
       '你想从哪开始',

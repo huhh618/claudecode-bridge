@@ -92,21 +92,20 @@ export class FeishuAdapter implements IChannelAdapter {
         loggerLevel: LoggerLevel.error,
       });
 
-      // Catch-all to see what events are arriving.
-      // Note: SDK may not dispatch card.action.trigger to a specific handler,
-      // so we handle card actions here as well.
+      // Debug: log all unrecognized events (do NOT rely on this for dispatch)
       (dispatcher as any).handles.set('*', async (data: any) => {
-        console.log('[FeishuAdapter] WS raw event:', JSON.stringify(data, null, 2));
-        const isCardAction = data?.action || data?.event?.action;
-        if (isCardAction) {
-          this.handleWsMessage(data);
-          return { toast: { type: 'success', content: '已收到' } };
-        }
+        console.log('[FeishuAdapter] WS raw event (unhandled):', JSON.stringify(data, null, 2));
       });
 
       dispatcher.register({
         'im.message.receive_v1': async (data: WsMessageData) => {
           this.handleWsMessage(data);
+        },
+        'card.action.trigger': async (data: any) => {
+          console.log('[FeishuAdapter] WS card action:', JSON.stringify(data, null, 2));
+          this.handleWsMessage(data);
+          // Feishu requires a toast response for card actions, otherwise client shows error 200672
+          return { toast: { type: 'success', content: '已收到' } };
         },
       });
 
@@ -352,7 +351,11 @@ export class FeishuAdapter implements IChannelAdapter {
       this.handler?.(text, undefined);
 
       // Update the original card message to show result and remove buttons
-      const messageId = raw.open_message_id as string | undefined;
+      const messageId =
+        (typeof raw.open_message_id === 'string' ? raw.open_message_id : undefined) ||
+        (typeof (raw.event as Record<string, unknown> | undefined)?.open_message_id === 'string'
+          ? (raw.event as Record<string, unknown>).open_message_id as string
+          : undefined);
       if (messageId) {
         const resultText = text === 'Y' ? '已确认' : (text === 'n' ? '已取消' : `已选择: ${text}`);
         this.updateCardMessage(messageId, resultText).catch((err) => {
@@ -419,7 +422,10 @@ export class FeishuAdapter implements IChannelAdapter {
       // Update the original card message to show result and remove buttons
       const event = body.event as Record<string, unknown> | undefined;
       const message = event?.message as Record<string, unknown> | undefined;
-      const messageId = typeof message?.parent_id === 'string' ? message.parent_id : undefined;
+      const messageId =
+        (typeof event?.open_message_id === 'string' ? event.open_message_id : undefined) ||
+        (typeof message?.parent_id === 'string' ? message.parent_id : undefined) ||
+        (typeof body.open_message_id === 'string' ? body.open_message_id : undefined);
       if (messageId) {
         const resultText = text === 'Y' ? '已确认' : (text === 'n' ? '已取消' : `已选择: ${text}`);
         this.updateCardMessage(messageId, resultText).catch((err) => {
@@ -438,7 +444,11 @@ export class FeishuAdapter implements IChannelAdapter {
 
     // Handle card action trigger (user clicked a button)
     // Check multiple possible locations for the action data.
-    const isCardAction = event?.type === 'card.action.trigger' || body.type === 'card.action.trigger';
+    const header = body.header as Record<string, unknown> | undefined;
+    const isCardAction =
+      event?.type === 'card.action.trigger' ||
+      body.type === 'card.action.trigger' ||
+      header?.event_type === 'card.action.trigger';
     if (isCardAction) {
       const action = (event?.action || body.action) as Record<string, unknown> | undefined;
       if (action) {
@@ -495,7 +505,11 @@ export class FeishuAdapter implements IChannelAdapter {
    */
   private buildWebhookResponse(body: Record<string, unknown>): Record<string, unknown> {
     const event = body.event as Record<string, unknown> | undefined;
-    const isCardAction = event?.type === 'card.action.trigger' || body.type === 'card.action.trigger';
+    const header = body.header as Record<string, unknown> | undefined;
+    const isCardAction =
+      event?.type === 'card.action.trigger' ||
+      body.type === 'card.action.trigger' ||
+      header?.event_type === 'card.action.trigger';
     if (isCardAction) {
       return { toast: { type: 'success', content: '已收到' } };
     }
